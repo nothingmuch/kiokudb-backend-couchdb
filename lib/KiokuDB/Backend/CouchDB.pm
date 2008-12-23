@@ -21,6 +21,24 @@ with qw(
     KiokuDB::Backend::Role::Query::Simple::Linear
 );
 
+has create => (
+    isa => "Bool",
+    is  => "ro",
+    default => 0,
+);
+
+sub BUILD {
+    my $self = shift;
+
+    if ( $self->create ) {
+        my $e = do {local $@; eval { $self->db->create->recv }; $@ };
+
+        if ( $e ) {
+            die $e unless $e =~ /database_already_exists/;
+        }
+    }
+}
+
 has db => (
     isa => "AnyEvent::CouchDB::Database",
     is  => "ro",

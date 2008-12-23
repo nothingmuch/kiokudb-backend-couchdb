@@ -26,7 +26,6 @@ my $keep = exists $ENV{KIOKU_COUCHDB_KEEP} ? $ENV{KIOKU_COUCHDB_KEEP} : exists $
 my $db = $couch->db($name);
 
 eval { $db->drop->recv };
-$db->create->recv;
 
 my $sg = $keep || Scope::Guard->new(sub { $db->drop->recv });
 
@@ -34,6 +33,7 @@ run_all_fixtures(
     KiokuDB->new(
         backend => KiokuDB::Backend::CouchDB->new(
             db => $db,
+            create => 1,
         ),
     )
 );
