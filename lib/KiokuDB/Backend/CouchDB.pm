@@ -186,3 +186,53 @@ __PACKAGE__
 
 __END__
 
+=pod
+
+=head1 NAME
+
+KiokuDB::Backend::CouchDB - CouchDB backend for L<KiokuDB>
+
+=head1 SYNOPSIS
+
+    KiokuDB->connect( "couchdb:uri=http://127.0.0.1:5984/database" );
+
+=head1 DESCRIPTION
+
+This backend provides L<KiokuDB> support for CouchDB using L<AnyEvent::CouchDB>.
+
+Note that this is the slowest backend of all for reading data, due to the
+latency in communicating with CouchDB over HTTP.
+
+=head1 ATTRIBUTES
+
+=over 4
+
+=item db
+
+An L<AnyEvent::CouchDB::Database> instance.
+
+Requires
+
+=item create
+
+Whether or not to try and create the database on instantiaton.
+
+Defaults to false.
+
+=back
+
+=head1 VERSION CONTROL
+
+L<http://github.com/nothingmuch/kiokudb-backend-couchdb>
+
+=head1 AUTHOR
+
+Yuval Kogman E<lt>nothingmuch@woobling.orgE<gt>
+
+=head1 COPYRIGHT
+
+	Copyright (c) 2008 Yuval Kogman, Infinity Interactive. All rights
+    reserved This program is free software; you can redistribute
+	it and/or modify it under the same terms as Perl itself.
+
+=cut
