@@ -15,18 +15,20 @@ use ok 'KiokuDB::Backend::CouchDB';
 
 use KiokuDB::Test;
 
-use Net::CouchDB;
+use AnyEvent::CouchDB;
 
-my $couch = Net::CouchDB->new($ENV{KIOKU_COUCHDB_URI});
+my $couch = couch($ENV{KIOKU_COUCHDB_URI});
 
 my $name = $ENV{KIOKU_COUCHDB_NAME} || "kioku-$$";
 
 my $keep = exists $ENV{KIOKU_COUCHDB_KEEP} ? $ENV{KIOKU_COUCHDB_KEEP} : exists $ENV{KIOKU_COUCHDB_NAME};
 
-eval { $couch->db($name)->delete };
+my $db = $couch->db($name);
 
-my $db = $couch->create_db($name);
-my $sg = $keep || Scope::Guard->new(sub { $db->delete });
+eval { $db->drop->recv };
+$db->create->recv;
+
+my $sg = $keep || Scope::Guard->new(sub { $db->drop->recv });
 
 run_all_fixtures(
     KiokuDB->new(

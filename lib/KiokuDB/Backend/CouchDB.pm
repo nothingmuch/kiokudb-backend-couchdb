@@ -5,6 +5,9 @@ use Moose;
 
 use Data::Stream::Bulk::Util qw(bulk);
 
+use AnyEvent::CouchDB;
+use JSON;
+
 use namespace::clean -except => 'meta';
 
 our $VERSION = "0.01";
@@ -19,53 +22,78 @@ with qw(
 );
 
 has db => (
-    isa => "Net::CouchDB::DB",
+    isa => "AnyEvent::CouchDB::Database",
     is  => "ro",
     handles => [qw(document)],
 );
 
-sub all_entries {
-    my $self = shift;
+has '+id_field'    => ( default => "_id" );
+has '+class_field' => ( default => "class" );
+has '+deleted_field' => ( default => "_deleted" );
 
-    bulk( map { $self->deserialize($_) } $self->db->all_documents ); # all_documents returns docs with no data
+sub new_from_dsn_params {
+    my ( $self, %args ) = @_;
+
+    my $db = exists $args{db}
+        ? couch($args{uri})->db($args{db})
+        : couchdb($args{uri});
+
+    $self->new(%args, db => $db);
 }
-
-sub clear { shift->db->clear } # FIXME handles does not satisfy roles yet
 
 sub delete {
     my ( $self, @ids_or_entries ) = @_;
 
-    my @docs = map { ref($_) ? $_->backend_data : $self->document($_) } @ids_or_entries;
+    my $db = $self->db;
 
-    $self->db->bulk({ delete => \@docs });
+    my @cvs = map { $db->open_doc($_) } grep { not ref } @ids_or_entries;
+
+    my @docs = (
+        ( map { $_->backend_data } grep { ref } @ids_or_entries ),
+        ( map { $_->recv } @cvs ),
+    );
+
+    my $cv = $db->bulk_docs(
+        [ map {
+            my $doc = blessed($_) ? $_->recv : $_;
+
+            {
+                _id      => $doc->{_id},
+                _rev     => $doc->{_rev},
+                _deleted => JSON::true,
+            }
+        } @docs ],
+    );
+
+    $cv->recv;
 }
 
 sub insert {
     my ( $self, @entries ) = @_;
 
-    my ( @update, @insert, @insert_entries );
+    my @docs;
+
+    my $db = $self->db;
 
     foreach my $entry ( @entries ) {
         my $collapsed = $self->collapse_jspon($entry);
-        $collapsed->{_id} = delete $collapsed->{id}; # FIXME
-        $collapsed->{class} = delete $collapsed->{__CLASS__};
-        $collapsed->{is_root} = $entry->root; # FIXME
+
+        push @docs, $collapsed;
+
+        $entry->backend_data($collapsed);
 
         if ( my $prev = $entry->prev ) {
             my $doc = $prev->backend_data;
-            %$doc = %$collapsed;
-            $entry->backend_data($prev->backend_data);
-            push @update, $doc;
-        } else {
-            push @insert, $collapsed;
-            push @insert_entries, $entry;
+            $collapsed->{_rev} = $doc->{_rev};
         }
     }
 
-    my @new_docs = $self->db->bulk({ update => \@update, insert => \@insert });
+    my $cv = $self->db->bulk_docs(\@docs);
 
-    foreach my $entry ( @insert_entries ) {
-        $entry->backend_data(shift @new_docs);
+    my $data = $cv->recv;
+
+    foreach my $rev ( map { $_->{rev} } @{ $data->{new_revs} } ) {
+        ( shift @docs )->{_rev} = $rev;
     }
 }
 
@@ -74,29 +102,44 @@ sub get {
 
     my @ret;
 
-    # FIXME bulk, and test
-    foreach my $uid ( @uids ) {
-        my $doc = $self->document($uid) || return;
-        push @ret, $self->deserialize($doc);
-    }
+    my $db = $self->db;
 
-    return @ret;
+    return (
+        map { $self->deserialize($_->recv) }
+        map { $db->open_doc($_) } @uids
+    );
 }
 
 sub deserialize {
     my ( $self, $doc ) = @_;
 
-    my %doc = %{ $doc->data };
+    my %doc = %{ $doc };
 
-    $doc{__CLASS__} = delete $doc{class};
-    $doc{id} = $doc->id;
-
-    return $self->expand_jspon(\%doc, backend_data => $doc, root => delete $doc{is_root} );
+    return $self->expand_jspon(\%doc, backend_data => $doc );
 }
 
 sub exists {
     my ( $self, @uids ) = @_;
-    map { defined $self->document($_) } @uids;
+    my $db = $self->db;
+    map { local $@; scalar eval { $_->recv; 1 } } map { $db->open_doc($_) } @uids;
+}
+
+sub clear {
+    my $self = shift;
+
+    $self->db->drop->recv;
+    $self->db->create->recv;
+}
+
+sub all_entries {
+    my $self = shift;
+
+    my $db = $self->db;
+
+    my $rows = $db->all_docs->recv->{rows};
+
+    # FIXME iterative
+    bulk( $self->get(map { $_->{id} } @$rows) );
 }
 
 __PACKAGE__->meta->make_immutable;

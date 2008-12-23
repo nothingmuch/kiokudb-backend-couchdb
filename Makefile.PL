@@ -17,7 +17,7 @@ WriteMakefile(
         'Moose' => 0,
 
 		'KiokuDB' => 0,
-		'Net::CouchDB' => 0,
+		'AnyEvent::CouchDB' => 0,
 		'KiokuDB::Backend::JSPON' => 0,,
 
 		'Data::Stream::Bulk' => 0,
