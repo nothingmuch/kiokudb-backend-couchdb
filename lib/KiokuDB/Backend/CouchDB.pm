@@ -31,6 +31,12 @@ has '+id_field'    => ( default => "_id" );
 has '+class_field' => ( default => "class" );
 has '+deleted_field' => ( default => "_deleted" );
 
+#has _prefetch => (
+#    isa => "HashRef",
+#    is  => "ro",
+#    default => sub { +{} },
+#);
+
 sub new_from_dsn_params {
     my ( $self, %args ) = @_;
 
@@ -97,16 +103,30 @@ sub insert {
     }
 }
 
+# this is actually slower for some reason
+#sub prefetch {
+#    my ( $self, @uids ) = @_;
+#
+#    my $db = $self->db;
+#    my $p = $self->_prefetch;
+#
+#    foreach my $uid ( @uids ) {
+#        $p->{$uid} = $db->open_doc($uid);
+#    }
+#}
+
 sub get {
     my ( $self, @uids ) = @_;
 
     my @ret;
 
     my $db = $self->db;
+    #my $p = $self->_prefetch;
 
     return (
         map { $self->deserialize($_->recv) }
-        map { $db->open_doc($_) } @uids
+        map { #delete($p->{$_}) ||
+            $db->open_doc($_) } @uids
     );
 }
 
