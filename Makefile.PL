@@ -16,9 +16,11 @@ WriteMakefile(
     PREREQ_PM    => {
         'Moose' => 0,
 
-		'KiokuDB' => 0.11,
-		'AnyEvent::CouchDB' => 1.06,
+        'KiokuDB' => 0.12,
+        'AnyEvent::CouchDB' => 1.07,
 
-		'Data::Stream::Bulk' => 0,
+        'Data::Stream::Bulk' => 0,
+
+        'Scope::Guard' => 0,
     },
 );
