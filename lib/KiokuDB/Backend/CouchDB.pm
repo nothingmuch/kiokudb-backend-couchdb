@@ -129,7 +129,7 @@ sub insert {
 #    my $p = $self->_prefetch;
 #
 #    foreach my $uid ( @uids ) {
-#        $p->{$uid} = $db->open_doc($uid);
+#        $p->{$uid} ||= $db->open_doc($uid);
 #    }
 #}
 
@@ -211,7 +211,7 @@ latency in communicating with CouchDB over HTTP.
 
 An L<AnyEvent::CouchDB::Database> instance.
 
-Requires
+Required.
 
 =item create
 
