@@ -47,6 +47,7 @@ has db => (
 
 has '+id_field'    => ( default => "_id" );
 has '+class_field' => ( default => "class" );
+has '+class_meta_field' => ( default => "class_meta" );
 has '+deleted_field' => ( default => "_deleted" );
 
 #has _prefetch => (
