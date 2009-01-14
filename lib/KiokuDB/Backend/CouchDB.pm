@@ -19,6 +19,7 @@ with qw(
     KiokuDB::Backend::Role::Clear
     KiokuDB::Backend::Role::Scan
     KiokuDB::Backend::Role::Query::Simple::Linear
+    KiokuDB::Backend::Role::TXN::Memory
 );
 
 has create => (
@@ -66,34 +67,7 @@ sub new_from_dsn_params {
     $self->new(%args, db => $db);
 }
 
-sub delete {
-    my ( $self, @ids_or_entries ) = @_;
-
-    my $db = $self->db;
-
-    my @cvs = map { $db->open_doc($_) } grep { not ref } @ids_or_entries;
-
-    my @docs = (
-        ( map { $_->backend_data } grep { ref } @ids_or_entries ),
-        ( map { $_->recv } @cvs ),
-    );
-
-    my $cv = $db->bulk_docs(
-        [ map {
-            my $doc = blessed($_) ? $_->recv : $_;
-
-            {
-                _id      => $doc->{_id},
-                _rev     => $doc->{_rev},
-                _deleted => JSON::true,
-            }
-        } @docs ],
-    );
-
-    $cv->recv;
-}
-
-sub insert {
+sub commit_entries {
     my ( $self, @entries ) = @_;
 
     my @docs;
@@ -101,15 +75,18 @@ sub insert {
     my $db = $self->db;
 
     foreach my $entry ( @entries ) {
-        my $collapsed = $self->collapse_jspon($entry);
+        my $collapsed = $self->collapse_jspon($entry); 
 
         push @docs, $collapsed;
 
         $entry->backend_data($collapsed);
 
-        if ( my $prev = $entry->prev ) {
-            my $doc = $prev->backend_data;
-            $collapsed->{_rev} = $doc->{_rev};
+        my $prev = $entry;
+        find_rev: while ( $prev = $prev->prev ) {
+            if ( my $doc = $prev->backend_data ) {
+                $collapsed->{_rev} = $doc->{_rev};
+                last find_rev;
+            }
         }
     }
 
@@ -135,18 +112,11 @@ sub insert {
 #}
 
 sub get {
-    my ( $self, @uids ) = @_;
-
-    my @ret;
+    my ( $self, @ids ) = @_;
 
     my $db = $self->db;
-    #my $p = $self->_prefetch;
 
-    return (
-        map { $self->deserialize($_->recv) }
-        map { #delete($p->{$_}) ||
-            $db->open_doc($_) } @uids
-    );
+    $self->txn_loaded_entries(map { $self->deserialize($_->recv) } map { $db->open_doc($_) } @ids);
 }
 
 sub deserialize {
@@ -158,27 +128,39 @@ sub deserialize {
 }
 
 sub exists {
-    my ( $self, @uids ) = @_;
+    my ( $self, @ids ) = @_;
+
     my $db = $self->db;
-    map { local $@; scalar eval { $_->recv; 1 } } map { $db->open_doc($_) } @uids;
+    map { local $@; scalar eval { $self->txn_loaded_entries($self->deserialize($_->recv)) } } map { $db->open_doc($_) } @ids;
 }
 
 sub clear {
     my $self = shift;
+
+    # FIXME TXN
 
     $self->db->drop->recv;
     $self->db->create->recv;
 }
 
 sub all_entries {
-    my $self = shift;
+    my ( $self, %args ) = @_;
 
-    my $db = $self->db;
+    # FIXME pagination
+    my @ids = map { $_->{id} } @{ $self->db->all_docs->recv->{rows} };
 
-    my $rows = $db->all_docs->recv->{rows};
+    if ( my $l = $args{live_objects} ) {
+        my %entries;
+        @entries{@ids} = $l->ids_to_entries(@ids);
 
-    # FIXME iterative
-    bulk( $self->get(map { $_->{id} } @$rows) );
+        my @missing = grep { not $entries{$_} } @ids;
+
+        @entries{@missing} = $self->get(@missing);
+
+        return bulk(values %entries);
+    } else {
+        return bulk($self->get(@ids));
+    }
 }
 
 __PACKAGE__->meta->make_immutable;
@@ -203,6 +185,15 @@ This backend provides L<KiokuDB> support for CouchDB using L<AnyEvent::CouchDB>.
 
 Note that this is the slowest backend of all for reading data, due to the
 latency in communicating with CouchDB over HTTP.
+
+=head1 TRANSACTION SUPPORT
+
+Since CouchDB supports atomicity by using optimistic concurrency locking
+transactions are be implemented by deferring all operations until the final
+commit.
+
+This means transactions are memory bound so if you are inserting or modifying
+lots of data it might be wise to break it down to smaller transactions.
 
 =head1 ATTRIBUTES
 
