@@ -1,0 +1,11 @@
+0.03
+    - Memory buffered transactions. Atomicity is guaranteed by CouchDB, so long
+      as the entire transactions is submitted at once in the top level
+      C<txn_commit>.
+
+0.02
+    - Various test suite fixes
+    - Add class_meta_field to serialize runtime role information
+
+0.01
+    - Initial release
