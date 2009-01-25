@@ -20,6 +20,7 @@ with qw(
     KiokuDB::Backend::Role::Scan
     KiokuDB::Backend::Role::Query::Simple::Linear
     KiokuDB::Backend::Role::TXN::Memory
+    KiokuDB::Backend::Role::Concurrency::POSIX
 );
 
 has create => (
