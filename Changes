@@ -1,3 +1,6 @@
+0.04
+    - Add new concurrency test
+
 0.03
     - Memory buffered transactions. Atomicity is guaranteed by CouchDB, so long
       as the entire transactions is submitted at once in the top level
