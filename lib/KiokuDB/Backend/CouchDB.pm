@@ -95,7 +95,12 @@ sub commit_entries {
 
     my $data = $cv->recv;
 
-    foreach my $rev ( map { $_->{rev} } @{ $data->{new_revs} } ) {
+
+    if ( my @errors = grep { exists $_->{error} } @$data ) {
+        die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+    }
+
+    foreach my $rev ( map { $_->{rev} } @$data ) {
         ( shift @docs )->{_rev} = $rev;
     }
 }
@@ -117,7 +122,11 @@ sub get {
 
     my $db = $self->db;
 
-    $self->txn_loaded_entries(map { $self->deserialize($_->recv) } map { $db->open_doc($_) } @ids);
+    my $cv = $db->open_docs(\@ids);
+
+    my $data = $cv->recv;
+
+    $self->txn_loaded_entries(map { $self->deserialize($_->{doc}) } @{ $data->{rows} });
 }
 
 sub deserialize {
