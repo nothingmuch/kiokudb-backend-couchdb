@@ -138,12 +138,6 @@ sub get_from_storage {
         @{ $data->{rows} };
 }
 
-sub get {
-    my ( $self, @ids ) = @_;
-    warn "get(", join(', ', @ids), ")\n";
-    $self->txn_loaded_entries($self->get_from_storage(@ids));
-}
-
 sub deserialize {
     my ( $self, $doc ) = @_;
 
@@ -152,13 +146,6 @@ sub deserialize {
     my %doc = %{ $doc };
 
     return $self->expand_jspon(\%doc, backend_data => $doc );
-}
-
-sub exists {
-    my ( $self, @ids ) = @_;
-
-    my $db = $self->db;
-    map { local $@; scalar eval { $self->txn_loaded_entries($self->deserialize($_->recv)) } } map { $db->open_doc($_) } @ids;
 }
 
 sub clear {
