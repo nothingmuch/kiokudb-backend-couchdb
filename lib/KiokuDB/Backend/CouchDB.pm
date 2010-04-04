@@ -35,8 +35,13 @@ sub BUILD {
     if ( $self->create ) {
         my $e = do {local $@; eval { $self->db->create->recv }; $@ };
 
+        # Throw errors except if its because the database already exists
         if ( $e ) {
-            die $e unless $e =~ /database_already_exists/;
+            if ( my($error) = grep { exists $_->{error} } @$e ) {
+                if( $error->{error} ne 'file_exists' ) {
+                    die "$error->{error}: $error->{reason}";
+                }
+            }
         }
     }
 }
@@ -95,7 +100,6 @@ sub commit_entries {
 
     my $data = $cv->recv;
 
-
     if ( my @errors = grep { exists $_->{error} } @$data ) {
         die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
     }
@@ -117,20 +121,33 @@ sub commit_entries {
 #    }
 #}
 
-sub get {
+sub get_from_storage {
     my ( $self, @ids ) = @_;
+
+    warn "get_from_storage(", join(', ', @ids), ")\n";
 
     my $db = $self->db;
 
     my $cv = $db->open_docs(\@ids);
 
     my $data = $cv->recv;
+    
+    map { $self->deserialize($_) }
+        map {$_->{doc}}
+        grep {exists $_->{doc}}
+        @{ $data->{rows} };
+}
 
-    $self->txn_loaded_entries(map { $self->deserialize($_->{doc}) } @{ $data->{rows} });
+sub get {
+    my ( $self, @ids ) = @_;
+    warn "get(", join(', ', @ids), ")\n";
+    $self->txn_loaded_entries($self->get_from_storage(@ids));
 }
 
 sub deserialize {
     my ( $self, $doc ) = @_;
+
+    confess "no doc provided" unless $doc;
 
     my %doc = %{ $doc };
 
