@@ -3,10 +3,13 @@
 package KiokuDB::Backend::CouchDB;
 use Moose;
 
+use Moose::Util::TypeConstraints;
+
 use Data::Stream::Bulk::Util qw(bulk);
 
 use AnyEvent::CouchDB;
 use JSON;
+use Carp 'croak';
 
 use namespace::clean -except => 'meta';
 
@@ -28,6 +31,13 @@ has create => (
     is  => "ro",
     default => 0,
 );
+
+has conflicts => (
+    is      => 'rw',
+    isa     => enum([qw{ overwrite croak ignore }]),
+    default => 'croak'
+);
+    
 
 sub BUILD {
     my $self = shift;
@@ -90,18 +100,50 @@ sub commit_entries {
         my $prev = $entry;
         find_rev: while ( $prev = $prev->prev ) {
             if ( my $doc = $prev->backend_data ) {
-                $collapsed->{_rev} = $doc->{_rev};
+                $collapsed->{_rev} = $doc->{_rev} if $doc->{_rev};
                 last find_rev;
             }
         }
     }
 
-    my $cv = $self->db->bulk_docs(\@docs);
-
-    my $data = $cv->recv;
+    my $data = $self->db->bulk_docs(\@docs)->recv;
 
     if ( my @errors = grep { exists $_->{error} } @$data ) {
-        die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+
+        if($self->conflicts eq 'croak') {
+            croak "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+        } elsif($self->conflicts eq 'overwrite') {
+            my @conflicts;
+            my @other_errors;
+            for(@errors) {
+                if($_->{error} eq 'conflict') {
+                    push @conflicts, $_->{id};
+                } else {
+                    push @other_errors, $_;
+                }
+            }
+            if(@other_errors) {
+                croak "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @other_errors);
+            }
+            
+            # Updating resulted in conflicts that we handle by overwriting the change
+            my $old_docs = $db->open_docs([@conflicts])->recv;
+            if(exists $old_docs->{error}) {
+                croak "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: $old_docs->{error}.";
+            }
+            my @old_docs = @{$old_docs->{rows}};
+            my @re_update_docs;
+            foreach my $old_doc (@old_docs) {
+                my($new_doc) = grep {$old_doc->{doc}{_id} eq $_->{_id}} @docs;
+                $new_doc->{_rev} = $old_doc->{doc}{_rev};
+            }
+            # Handle errors that has arised when trying the second update
+            if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
+                croak "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
+                    join(', ', map { $_->{error} . ' on ' . $_->{id} } @errors);
+            }
+        }
+        # $self->conflicts eq 'ignore' here, so don't do anything
     }
 
     foreach my $rev ( map { $_->{rev} } @$data ) {
@@ -123,8 +165,6 @@ sub commit_entries {
 
 sub get_from_storage {
     my ( $self, @ids ) = @_;
-
-    warn "get_from_storage(", join(', ', @ids), ")\n";
 
     my $db = $self->db;
 
