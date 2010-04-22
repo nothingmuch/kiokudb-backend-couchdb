@@ -19,8 +19,6 @@ with qw(
     KiokuDB::Backend::Role::Clear
     KiokuDB::Backend::Role::Scan
     KiokuDB::Backend::Role::Query::Simple::Linear
-    KiokuDB::Backend::Role::TXN::Memory
-    KiokuDB::Backend::Role::Concurrency::POSIX
 );
 
 has create => (
@@ -68,7 +66,21 @@ sub new_from_dsn_params {
     $self->new(%args, db => $db);
 }
 
-sub commit_entries {
+sub delete {
+    my ( $self, @ids_or_entries ) = @_;
+
+    my @entries = grep { ref } @ids_or_entries;
+
+    my @ids = grep { not ref } @ids_or_entries;
+
+    my @new_entries = map { $_->deletion_entry } $self->get(@ids);
+
+    $self->insert(@entries, @new_entries);
+
+    return @new_entries;
+}
+
+sub insert {
     my ( $self, @entries ) = @_;
 
     my @docs;
@@ -120,13 +132,15 @@ sub commit_entries {
 sub get {
     my ( $self, @ids ) = @_;
 
-    my $db = $self->db;
-
-    my $cv = $db->open_docs(\@ids);
+    my $cv = $self->db->open_docs(\@ids);
 
     my $data = $cv->recv;
 
-    $self->txn_loaded_entries(map { $self->deserialize($_->{doc}) } @{ $data->{rows} });
+    if ( @{ $data->{rows} } == @ids ) {
+        return map { $self->deserialize($_->{doc} || return ) } @{ $data->{rows} };
+    } else {
+        return;
+    }
 }
 
 sub deserialize {
@@ -140,8 +154,11 @@ sub deserialize {
 sub exists {
     my ( $self, @ids ) = @_;
 
-    my $db = $self->db;
-    map { local $@; scalar eval { $self->txn_loaded_entries($self->deserialize($_->recv)) } } map { $db->open_doc($_) } @ids;
+    my $cv = $self->db->open_docs(\@ids);
+
+    my $data = $cv->recv;
+
+    return map { ref $_->{doc} } @{ $data->{rows} };
 }
 
 sub clear {
