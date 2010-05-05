@@ -275,6 +275,10 @@ L<http://github.com/nothingmuch/kiokudb-backend-couchdb>
 
 Yuval Kogman E<lt>nothingmuch@woobling.orgE<gt>
 
+=head1 CONTRIBUTORS
+
+Michael Zedeler E<lt>michael@zedeler.dk<gt>
+
 =head1 COPYRIGHT
 
     Copyright (c) 2008, 2009 Yuval Kogman, Infinity Interactive. All
