@@ -9,7 +9,7 @@ use Data::Stream::Bulk::Util qw(bulk);
 
 use AnyEvent::CouchDB;
 use JSON;
-use Carp 'croak';
+use Carp 'confess';
 
 use namespace::clean -except => 'meta';
 
@@ -34,8 +34,8 @@ has create => (
 
 has conflicts => (
     is      => 'rw',
-    isa     => enum([qw{ overwrite croak ignore }]),
-    default => 'croak'
+    isa     => enum([qw{ overwrite confess ignore }]),
+    default => 'confess'
 );
     
 
@@ -110,8 +110,8 @@ sub commit_entries {
 
     if ( my @errors = grep { exists $_->{error} } @$data ) {
 
-        if($self->conflicts eq 'croak') {
-            croak "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+        if($self->conflicts eq 'confess') {
+            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
         } elsif($self->conflicts eq 'overwrite') {
             my @conflicts;
             my @other_errors;
@@ -123,13 +123,13 @@ sub commit_entries {
                 }
             }
             if(@other_errors) {
-                croak "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @other_errors);
+                confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @other_errors);
             }
             
             # Updating resulted in conflicts that we handle by overwriting the change
             my $old_docs = $db->open_docs([@conflicts])->recv;
             if(exists $old_docs->{error}) {
-                croak "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: $old_docs->{error}.";
+                confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: $old_docs->{error}.";
             }
             my @old_docs = @{$old_docs->{rows}};
             my @re_update_docs;
@@ -139,7 +139,7 @@ sub commit_entries {
             }
             # Handle errors that has arised when trying the second update
             if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
-                croak "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
+                confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
                     join(', ', map { $_->{error} . ' on ' . $_->{id} } @errors);
             }
         }
