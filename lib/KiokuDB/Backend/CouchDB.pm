@@ -183,8 +183,8 @@ sub all_entries {
 sub simple_search {
 	my ($self, $args) = @_;
 	# TODO: pagination
-	my @ids = map { $_->{id} } @{ $self->db->view($args->{name}, $args->{options})->recv->{rows} };
-	return bulk($self->get(@ids));
+    my $data = $self->db->view($args->{name}, $args->{options})->recv;
+	return bulk(map { $self->deserialize($_->{value}) } @{ $data->{rows} });
 }
 
 __PACKAGE__->meta->make_immutable;
