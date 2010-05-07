@@ -100,6 +100,9 @@ sub commit_entries {
 
     my $data = $cv->recv;
 
+	if ( !(ref($data) eq 'ARRAY') ) {
+		die "Bad response to update: " . $data;
+	}
     if ( my @errors = grep { exists $_->{error} } @$data ) {
         die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
     }
