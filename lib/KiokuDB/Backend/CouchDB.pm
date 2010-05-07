@@ -18,7 +18,7 @@ with qw(
     KiokuDB::Backend::Role::UnicodeSafe
     KiokuDB::Backend::Role::Clear
     KiokuDB::Backend::Role::Scan
-    KiokuDB::Backend::Role::Query::Simple::Linear
+    KiokuDB::Backend::Role::Query::Simple
     KiokuDB::Backend::Role::TXN::Memory
     KiokuDB::Backend::Role::Concurrency::POSIX
 );
@@ -178,6 +178,13 @@ sub all_entries {
     } else {
         return bulk($self->get(@ids));
     }
+}
+
+sub simple_search {
+	my ($self, $args) = @_;
+	# TODO: pagination
+	my @ids = map { $_->{id} } @{ $self->db->view($args->{name}, $args->{options})->recv->{rows} };
+	return bulk($self->get(@ids));
 }
 
 __PACKAGE__->meta->make_immutable;
