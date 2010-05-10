@@ -106,6 +106,7 @@ sub commit_entries {
         }
     }
 
+    # TODO couchdb <=0.8 (possibly 0.9 too) will return a hash ref here, which will fail. Detect and handle.
     my $data = $self->db->bulk_docs(\@docs)->recv;
 
     if ( my @errors = grep { exists $_->{error} } @$data ) {
@@ -277,7 +278,7 @@ Yuval Kogman E<lt>nothingmuch@woobling.orgE<gt>
 
 =head1 CONTRIBUTORS
 
-Michael Zedeler E<lt>michael@zedeler.dk<gt>, Anders Bruun Borch E<lt>cyborch@deck.dk<gt>
+Michael Zedeler E<lt>michael@zedeler.dk<gt>, Anders Bruun Borch E<lt>cyborch@deck.dk<gt>.
 
 =head1 COPYRIGHT
 
