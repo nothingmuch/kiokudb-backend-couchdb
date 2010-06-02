@@ -133,12 +133,26 @@ sub get_from_storage {
 
     my $cv = $db->open_docs(\@ids);
 
-    my $data = $cv->recv;
+    my @result;
+
+    my $error_count = 0;
+    my $max_errors = 2;
+    $@ = 1;
+    while ($@ and $error_count < $max_errors) {
+	$@ = undef;
+	eval {
+	    my $data = $cv->recv;
     
-    map { $self->deserialize($_) }
-        map {$_->{doc}}
-        grep {exists $_->{doc}}
-        @{ $data->{rows} };
+	    @result = map { $self->deserialize($_) }
+	        map {$_->{doc}}
+                grep {exists $_->{doc}}
+                @{ $data->{rows} };
+	};
+    }
+    if ($@) {
+	die $@;
+    }
+    return @result;
 }
 
 sub deserialize {
