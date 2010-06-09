@@ -2,6 +2,7 @@
 
 package KiokuDB::Backend::CouchDB;
 use Moose;
+use warnings;
 
 use Data::Stream::Bulk::Util qw(bulk);
 
@@ -96,20 +97,32 @@ sub commit_entries {
         }
     }
 
-    my $cv = $self->db->bulk_docs(\@docs);
+    my $error_count = 0;
+    my $max_errors = 2;
+    $@ = 1;
+    while ($@ and $error_count < $max_errors) {
+	$@ = undef;
+	eval {
+	    my $cv = $self->db->bulk_docs(\@docs);
 
-    my $data = $cv->recv;
+	    my $data = $cv->recv;
 
-	if ( !(ref($data) eq 'ARRAY') ) {
+	    if ( !(ref($data) eq 'ARRAY') ) {
 		die "Bad response to update: " . $data;
-	}
-    if ( my @errors = grep { exists $_->{error} } @$data ) {
-        die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+	    }
+	    if ( my @errors = grep { exists $_->{error} } @$data ) {
+		die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+	    }
+
+	    foreach my $rev ( map { $_->{rev} } @$data ) {
+		( shift @docs )->{_rev} = $rev;
+	    }
+	};
+    }
+    if ($@) {
+	warn $@;
     }
 
-    foreach my $rev ( map { $_->{rev} } @$data ) {
-        ( shift @docs )->{_rev} = $rev;
-    }
 }
 
 # this is actually slower for some reason
