@@ -174,27 +174,22 @@ sub get_from_storage {
 
     my $error_count = 0;
     my $max_errors = 2;
-    while(not @result) {
-        my $data;
-    	eval {
-    	    $data = $cv->recv;
-    	    @result = map { $self->deserialize($_) }
+    my $data;
+    while(not $data and $error_count <= $max_errors) {
+    	eval { $data = $cv->recv };
+    	if($@) {
+    	    $error_count++;
+    	} elsif(not $data) {
+    	    die "Call to CouchDB returned false ($data)";
+    	}
+    }
+    die $@ if $@;
+
+    # TODO Complain if $_->{doc} is missing
+    return map { $self->deserialize($_) }
     	        map {$_->{doc}}
                     grep {exists $_->{doc}}
                         @{ $data->{rows} };
-    	};
-        last if defined $data->{total_rows};
-    	
-    	next if $@ and ++$error_count <= $max_errors;
-    	
-    	if($@) {
-    	    die $@;
-    	} else {
-    	    die "Unrecognized response from CouchDB", $data;
-    	}
-    }
-
-    return @result;
 }
 
 sub deserialize {
