@@ -2,16 +2,20 @@
 
 package KiokuDB::Backend::CouchDB;
 use Moose;
-use warnings;
+
+use Moose::Util::TypeConstraints;
 
 use Data::Stream::Bulk::Util qw(bulk);
 
 use AnyEvent::CouchDB;
 use JSON;
+use Carp 'confess';
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = "0.04";
+our $VERSION = "0.05";
+
+# TODO Read revision numbers into rev field and use for later conflict resolution
 
 with qw(
     KiokuDB::Backend
@@ -19,7 +23,7 @@ with qw(
     KiokuDB::Backend::Role::UnicodeSafe
     KiokuDB::Backend::Role::Clear
     KiokuDB::Backend::Role::Scan
-    KiokuDB::Backend::Role::Query::Simple
+    KiokuDB::Backend::Role::Query::Simple::Linear
     KiokuDB::Backend::Role::TXN::Memory
     KiokuDB::Backend::Role::Concurrency::POSIX
 );
@@ -29,6 +33,13 @@ has create => (
     is  => "ro",
     default => 0,
 );
+
+has conflicts => (
+    is      => 'rw',
+    isa     => enum([qw{ overwrite confess ignore }]),
+    default => 'confess'
+);
+    
 
 sub BUILD {
     my $self = shift;
@@ -78,7 +89,6 @@ sub commit_entries {
     my ( $self, @entries ) = @_;
 
     my @docs;
-
     my $db = $self->db;
 
     foreach my $entry ( @entries ) {
@@ -91,38 +101,56 @@ sub commit_entries {
         my $prev = $entry;
         find_rev: while ( $prev = $prev->prev ) {
             if ( my $doc = $prev->backend_data ) {
-                $collapsed->{_rev} = $doc->{_rev};
+                $collapsed->{_rev} = $doc->{_rev} if $doc->{_rev};
                 last find_rev;
             }
         }
     }
 
-    my $error_count = 0;
-    my $max_errors = 2;
-    $@ = 1;
-    while ($@ and $error_count < $max_errors) {
-	$@ = undef;
-	eval {
-	    my $cv = $self->db->bulk_docs(\@docs);
+    # TODO couchdb <= 0.8 (possibly 0.9 too) will return a hash ref here, which will fail. Detect and handle.
+    my $data = $self->db->bulk_docs(\@docs)->recv;
 
-	    my $data = $cv->recv;
+    if ( my @errors = grep { exists $_->{error} } @$data ) {
 
-	    if ( !(ref($data) eq 'ARRAY') ) {
-		die "Bad response to update: " . $data;
-	    }
-	    if ( my @errors = grep { exists $_->{error} } @$data ) {
-		die "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
-	    }
-
-	    foreach my $rev ( map { $_->{rev} } @$data ) {
-		( shift @docs )->{_rev} = $rev;
-	    }
-	};
+        if($self->conflicts eq 'confess') {
+            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+        } elsif($self->conflicts eq 'overwrite') {
+            my @conflicts;
+            my @other_errors;
+            for(@errors) {
+                if($_->{error} eq 'conflict') {
+                    push @conflicts, $_->{id};
+                } else {
+                    push @other_errors, $_;
+                }
+            }
+            if(@other_errors) {
+                confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @other_errors);
+            }
+            
+            # Updating resulted in conflicts that we handle by overwriting the change
+            my $old_docs = $db->open_docs([@conflicts])->recv;
+            if(exists $old_docs->{error}) {
+                confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: $old_docs->{error}.";
+            }
+            my @old_docs = @{$old_docs->{rows}};
+            my @re_update_docs;
+            foreach my $old_doc (@old_docs) {
+                my($new_doc) = grep {$old_doc->{doc}{_id} eq $_->{_id}} @docs;
+                $new_doc->{_rev} = $old_doc->{doc}{_rev};
+            }
+            # Handle errors that has arised when trying the second update
+            if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
+                confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
+                    join(', ', map { $_->{error} . ' on ' . $_->{id} } @errors);
+            }
+        }
+        # $self->conflicts eq 'ignore' here, so don't do anything
     }
-    if ($@) {
-	warn $@;
-    }
 
+    foreach my $rev ( map { $_->{rev} } @$data ) {
+        ( shift @docs )->{_rev} = $rev;
+    }
 }
 
 # this is actually slower for some reason
@@ -140,31 +168,32 @@ sub commit_entries {
 sub get_from_storage {
     my ( $self, @ids ) = @_;
 
-    warn "get_from_storage(", join(', ', @ids), ")\n";
-
-    my $db = $self->db;
-
-    my $cv = $db->open_docs(\@ids);
-
     my @result;
+
+    my $cv = $self->db->open_docs(\@ids);
 
     my $error_count = 0;
     my $max_errors = 2;
-    $@ = 1;
-    while ($@ and $error_count < $max_errors) {
-	$@ = undef;
-	eval {
-	    my $data = $cv->recv;
-    
-	    @result = map { $self->deserialize($_) }
-	        map {$_->{doc}}
-                grep {exists $_->{doc}}
-                @{ $data->{rows} };
-	};
+    while(not @result) {
+        my $data;
+    	eval {
+    	    $data = $cv->recv;
+    	    @result = map { $self->deserialize($_) }
+    	        map {$_->{doc}}
+                    grep {exists $_->{doc}}
+                        @{ $data->{rows} };
+    	};
+        last if defined $data->{total_rows};
+    	
+    	next if $@ and ++$error_count <= $max_errors;
+    	
+    	if($@) {
+    	    die $@;
+    	} else {
+    	    die "Unrecognized response from CouchDB", $data;
+    	}
     }
-    if ($@) {
-	die $@;
-    }
+
     return @result;
 }
 
@@ -207,16 +236,9 @@ sub all_entries {
     }
 }
 
-sub simple_search {
-	my ($self, $args) = @_;
-	# TODO: pagination
-    my $data = $self->db->view($args->{name}, $args->{options})->recv;
-	return bulk(map { $self->deserialize($_->{value}) } @{ $data->{rows} });
-}
-
 __PACKAGE__->meta->make_immutable;
 
-__PACKAGE__
+1;
 
 __END__
 
@@ -266,16 +288,24 @@ Defaults to false.
 
 =head1 VERSION CONTROL
 
-L<http://github.com/nothingmuch/kiokudb-backend-couchdb>
+L<http://github.com/mzedeler/kiokudb-backend-couchdb>
 
 =head1 AUTHOR
 
 Yuval Kogman E<lt>nothingmuch@woobling.orgE<gt>
+
+=head1 CONTRIBUTORS
+
+Michael Zedeler E<lt>michael@zedeler.dk<gt>, Anders Bruun Borch E<lt>cyborch@deck.dk<gt>.
 
 =head1 COPYRIGHT
 
     Copyright (c) 2008, 2009 Yuval Kogman, Infinity Interactive. All
     rights reserved This program is free software; you can redistribute
     it and/or modify it under the same terms as Perl itself.
+
+    Copyright (c) 2010 Leasingbørsen. All rights reserved. This program
+    is free software; you can redistribute it and/or modify it under 
+    the same terms as Perl itself.
 
 =cut
