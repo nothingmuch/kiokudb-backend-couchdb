@@ -185,6 +185,9 @@ sub get_from_storage {
     }
     die $@ if $@;
 
+    die("Invalid response from CouchDB", $data)
+        unless $data->{rows} and ref $data->{rows} eq 'ARRAY';
+
     # TODO Complain if $_->{doc} is missing
     return map { $self->deserialize($_) }
     	        map {$_->{doc}}
