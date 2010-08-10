@@ -10,10 +10,11 @@ use Data::Stream::Bulk::Util qw(bulk);
 use AnyEvent::CouchDB;
 use JSON;
 use Carp 'confess';
+use Try::Tiny;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = "0.05";
+our $VERSION = '0.06';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
@@ -81,7 +82,7 @@ sub new_from_dsn_params {
     my $db = exists $args{db}
         ? couch($args{uri})->db($args{db})
         : couchdb($args{uri});
-
+        
     $self->new(%args, db => $db);
 }
 
@@ -170,29 +171,37 @@ sub get_from_storage {
 
     my @result;
 
-    my $cv = $self->db->open_docs(\@ids);
-
     my $error_count = 0;
     my $max_errors = 2;
+    my $retry_delay = 5;
     my $data;
+    my $error;
     while(not $data and $error_count <= $max_errors) {
-    	eval { $data = $cv->recv };
-    	if($@) {
-    	    $error_count++;
-    	} elsif(not $data) {
+        $error = undef;
+        try   { $data = $self->db->open_docs(\@ids)->recv }
+        catch { $error_count++; $error = $_ };
+        
+        # Always retry immediately after first failed connect, then apply delay
+        sleep $retry_delay if $error_count > 1;
+        
+    	if(not $error and not $data) {
     	    die "Call to CouchDB returned false ($data)";
     	}
     }
-    die $@ if $@;
+    die $error->[0]{Reason} if ref $error eq 'ARRAY' and ref $error->[0] eq 'HASH' and $error->[0]{Reason};
+    die $error if $error;
 
-    die("Invalid response from CouchDB", $data)
+    die('Invalid response from CouchDB (rows missing or not array)', $data)
         unless $data->{rows} and ref $data->{rows} eq 'ARRAY';
 
-    # TODO Complain if $_->{doc} is missing
+    if(my @errors = grep {not exists $_->{doc}} @{ $data->{rows} }) {
+        die 'Response from CouchDB contained rows without documents (rows array without doc hashes)', @errors;
+    }
+    
     return map { $self->deserialize($_) }
-    	        map {$_->{doc}}
-                    grep {exists $_->{doc}}
-                        @{ $data->{rows} };
+                map {$_->{doc}}
+                    @{ $data->{rows} };
+        
 }
 
 sub deserialize {
