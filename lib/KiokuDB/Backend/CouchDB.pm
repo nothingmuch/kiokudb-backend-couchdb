@@ -11,6 +11,7 @@ use AnyEvent::CouchDB;
 use JSON;
 use Carp 'confess';
 use Try::Tiny;
+use List::MoreUtils 'all';
 
 use namespace::clean -except => 'meta';
 
@@ -195,19 +196,19 @@ sub get_from_storage {
         unless $data->{rows} and ref $data->{rows} eq 'ARRAY';
 
     if(my @errors = grep {not exists $_->{doc}} @{ $data->{rows} }) {
-        die 'Response from CouchDB contained rows without documents (rows array without doc hashes)', @errors;
+        unless(all {$_->{error} and $_->{error} eq 'not_found'} @errors) {
+            die 'Response from CouchDB contained rows without documents (rows array without doc hashes)';
+        }
     }
     
-    return map { $self->deserialize($_) }
-                map {$_->{doc}}
-                    @{ $data->{rows} };
+    return map { (defined) ? $self->deserialize($_) : undef }
+        map {$_->{doc}}
+            @{ $data->{rows} };
         
 }
 
 sub deserialize {
     my ( $self, $doc ) = @_;
-
-    confess "no doc provided" unless $doc;
 
     my %doc = %{ $doc };
 
