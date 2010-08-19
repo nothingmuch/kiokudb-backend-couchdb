@@ -12,6 +12,7 @@ use JSON;
 use Carp 'confess';
 use Try::Tiny;
 use List::MoreUtils 'all';
+use Data::Visitor::Callback;
 
 use namespace::clean -except => 'meta';
 
@@ -215,6 +216,21 @@ sub deserialize {
     return $self->expand_jspon(\%doc, backend_data => $doc );
 }
 
+## This method takes a raw perl data structure received from the backend and deflates
+## any object references found there.
+#sub deflate_struct {
+#    my $self = shift;
+#    my $visitor = Data::Visitor::Callback->new(
+#        hash => sub {
+#            if(ref eq 'HASH' and exists $_->{'$ref'} and $_->{'$ref'} =~ /^(.+).data$/) {
+#                $_ = $self->deserialize($_);
+#            }
+#            return $_;
+#        }
+#    );
+#    return map {$visitor->visit($_)} @_;
+#}
+
 sub clear {
     my $self = shift;
 
@@ -242,6 +258,14 @@ sub all_entries {
     } else {
         return bulk($self->get(@ids));
     }
+}
+
+# view() is a non-compliant method that can be called directly to query 
+# couchdb views and have all KiokuDB objects instantiated when needed
+
+sub view {
+    my($self, $name, $options) = @_;
+    return $self->deserialize($self->db->view($name, $options)->recv);
 }
 
 __PACKAGE__->meta->make_immutable;
