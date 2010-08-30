@@ -17,12 +17,24 @@ sub view {
     my($result) = dmap {
         if(ref eq 'HASH') {
             if($_->{key} and $_->{value} and blessed $_->{value}) {
-                $_ = $self->linker->expand_object($_->{value});
+                if($_->{value}->isa('KiokuDB::Entry')) {
+                    my $entry = $_->{value};
+                    my $object;
+                    if(not $object = $self->live_objects->id_to_object($entry->id)) {
+                        $object = $self->linker->expand_object($entry);
+                    }
+                    $_ = $object;
+                }
             }
         } elsif(blessed $_ and $_->isa('KiokuDB::Reference')) {
-            my $ref_obj = $_;
-            $_ = \{'Unlinked reference' => $_};
-            $self->linker->queue_ref($ref_obj, $_);
+            my $object = $self->live_objects->id_to_object($_->id);
+            if(not $object) {
+                my $ref_obj = $_;
+                $_ = ['Unlinked KiokuDB::Reference'];
+                $self->linker->queue_ref($ref_obj, \$_);
+            } else {
+                $_ = $object;
+            }
         }
         $_
     } $self->backend->deserialize($self->backend->db->view($name, $options)->recv);
