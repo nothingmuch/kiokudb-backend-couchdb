@@ -14,8 +14,6 @@ use namespace::clean -except => 'meta';
 sub view {
     my($self, $name, $options) = @_;
 
-    warn "Scope 1: ", $self->live_objects->current_scope, "\n";
-
     my($result) = dmap {
         if(ref eq 'HASH') {
             if($_->{key} and $_->{value} and blessed $_->{value}) {
@@ -29,12 +27,8 @@ sub view {
         $_
     } $self->backend->deserialize($self->backend->db->view($name, $options)->recv);
 
-    warn "Scope 2: ", $self->live_objects->current_scope, "\n";
-
     $self->linker->load_queue;
 
-    warn "Scope 3: ", $self->live_objects->current_scope, "\n";
-    
     return $result;
 }
 
