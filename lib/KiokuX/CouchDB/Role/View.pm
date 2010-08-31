@@ -1,7 +1,7 @@
 package KiokuX::CouchDB::Role::View;
 
 use Moose::Role;
-use Data::Dmap;
+use Data::Dmap 'cut', 'dmap';
 use Carp 'croak';
 use Scalar::Util 'blessed';
 
@@ -14,6 +14,7 @@ use namespace::clean -except => 'meta';
 sub view {
     my($self, $name, $options) = @_;
 
+    # TODO Fix backend data
     my($result) = dmap {
         if(ref eq 'HASH') {
             if($_->{key} and $_->{value} and blessed $_->{value}) {
@@ -35,10 +36,12 @@ sub view {
             } else {
                 $_ = $object;
             }
+        } elsif(blessed $_) {
+            cut $_;
         }
         $_
     } $self->backend->deserialize($self->backend->db->view($name, $options)->recv);
-
+    
     $self->linker->load_queue;
 
     return $result;
