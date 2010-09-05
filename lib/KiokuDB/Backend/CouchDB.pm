@@ -90,10 +90,10 @@ sub new_from_dsn_params {
 
 sub commit_entries {
     my ( $self, @entries ) = @_;
-
+    
     my @docs;
     my $db = $self->db;
-
+    
     foreach my $entry ( @entries ) {
         my $collapsed = $self->collapse_jspon($entry); 
 
@@ -114,7 +114,7 @@ sub commit_entries {
     my $data = $self->db->bulk_docs(\@docs)->recv;
 
     if ( my @errors = grep { exists $_->{error} } @$data ) {
-
+        
         if($self->conflicts eq 'confess') {
             confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
         } elsif($self->conflicts eq 'overwrite') {
@@ -141,6 +141,7 @@ sub commit_entries {
             foreach my $old_doc (@old_docs) {
                 my($new_doc) = grep {$old_doc->{doc}{_id} eq $_->{_id}} @docs;
                 $new_doc->{_rev} = $old_doc->{doc}{_rev};
+                push @re_update_docs, $new_doc;
             }
             # Handle errors that has arised when trying the second update
             if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
