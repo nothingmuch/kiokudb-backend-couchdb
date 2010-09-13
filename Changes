@@ -1,3 +1,12 @@
+0.06
+   - Supporting non-standard method: view() that will query CouchDB and return
+     a data structure containing live objects wherever KiokuDB entries are
+     found in the result.
+   - Respecting attachments (the prior versions would silently drop them).
+   
+0.05
+   - (Not published.) Improved stability and error checking.
+
 0.04
     - Add new concurrency test
 

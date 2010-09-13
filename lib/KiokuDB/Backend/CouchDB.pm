@@ -93,21 +93,33 @@ sub commit_entries {
     
     my @docs;
     my $db = $self->db;
-    
+
     foreach my $entry ( @entries ) {
+        
+        my $rev;
+        my $attachments;
+        {
+            my $prev = $entry;
+            while(not $rev and not $attachments and $prev) {
+                if(my $backend_data = $prev->backend_data) {
+                    $rev         = $backend_data->{_rev};
+                    $attachments = $backend_data->{_attachments};
+                }
+                $prev = $prev->prev;
+            }
+        }
+        
+        my $object = $entry->object;
+
         my $collapsed = $self->collapse_jspon($entry); 
 
+        $collapsed->{_rev} = $rev if $rev;
+        $collapsed->{_attachments} = $attachments if $attachments;
+        
         push @docs, $collapsed;
 
         $entry->backend_data($collapsed);
 
-        my $prev = $entry;
-        find_rev: while ( $prev = $prev->prev ) {
-            if ( my $doc = $prev->backend_data ) {
-                $collapsed->{_rev} = $doc->{_rev} if $doc->{_rev};
-                last find_rev;
-            }
-        }
     }
 
     # TODO couchdb <= 0.8 (possibly 0.9 too) will return a hash ref here, which will fail. Detect and handle.
@@ -310,6 +322,10 @@ Whether or not to try and create the database on instantiaton.
 Defaults to false.
 
 =back
+
+=head1 SEE ALSO
+
+L<KiokuX::CouchDB::Role::View>.
 
 =head1 VERSION CONTROL
 
