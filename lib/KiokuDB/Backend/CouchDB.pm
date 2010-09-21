@@ -109,8 +109,6 @@ sub commit_entries {
             }
         }
         
-        my $object = $entry->object;
-
         my $collapsed = $self->collapse_jspon($entry); 
 
         $collapsed->{_rev} = $rev if $rev;
@@ -209,16 +207,40 @@ sub get_from_storage {
     die('Invalid response from CouchDB (rows missing or not array)', $data)
         unless $data->{rows} and ref $data->{rows} eq 'ARRAY';
 
-    if(my @errors = grep {not exists $_->{doc}} @{ $data->{rows} }) {
-        unless(all {$_->{error} and $_->{error} eq 'not_found'} @errors) {
-            die 'Response from CouchDB contained rows without documents (rows array without doc hashes)';
+    my @deleted;
+    my @not_found;
+    my @unknown;
+    my @errors;
+    my @docs;
+    for(@{ $data->{rows} }) {
+        if($_->{doc} ) {
+            # TODO We may have to check if $_->{doc} has a valid value and treat as error otherwise
+            push @docs, $_->{doc};
+        } elsif($_->{value}{deleted}) {
+            push @deleted, $_;
+        } elsif(my $error = $_->{error}) {
+            if($error eq 'not_found') {
+                push @not_found, $_;
+            } else {
+                push @errors, $_;
+            }
+        } else {
+            push @unknown, $_; 
         }
     }
+    if(@errors) {
+        use Data::Dump 'pp';
+        die 'Error on fetch from CouchDB.', pp @errors;
+    }
+    if(@unknown) {
+        use Data::Dump 'pp';
+        die 'Unknown response from CouchDB.', pp @unknown;
+    }
+
+    # TODO What to do with deleted entries?
+    # TODO What to do with entries not found?
     
-    return map { (defined) ? $self->deserialize($_) : undef }
-        map {$_->{doc}}
-            @{ $data->{rows} };
-        
+    return map { $self->deserialize($_) } @docs;
 }
 
 sub deserialize {
