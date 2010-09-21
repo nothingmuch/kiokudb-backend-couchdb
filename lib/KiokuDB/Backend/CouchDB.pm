@@ -16,7 +16,7 @@ use Data::Visitor::Callback;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
@@ -124,9 +124,10 @@ sub commit_entries {
     my $data = $self->db->bulk_docs(\@docs)->recv;
 
     if ( my @errors = grep { exists $_->{error} } @$data ) {
-        
+
         if($self->conflicts eq 'confess') {
-            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @errors);
+            no warnings 'uninitialized';
+            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id} ($_->{rev}))" } @errors);
         } elsif($self->conflicts eq 'overwrite') {
             my @conflicts;
             my @other_errors;
@@ -138,7 +139,7 @@ sub commit_entries {
                 }
             }
             if(@other_errors) {
-                confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id})" } @other_errors);
+                confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id} ($_->{rev}))" } @other_errors);
             }
             
             # Updating resulted in conflicts that we handle by overwriting the change

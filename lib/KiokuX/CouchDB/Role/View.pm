@@ -14,12 +14,30 @@ use namespace::clean -except => 'meta';
 sub view {
     my($self, $name, $options) = @_;
 
-    # TODO Fix backend data
+    # Backend data fix hack
+    # The real solution to this ugly way of recovering backend data is to
+    # replace the JSPON expander/collapser with a version that doesn't throw
+    # away revision numbers.
+    my $backend_data;
+    my($response) = $self->backend->db->view($name, $options)->recv;
+    dmap {
+        if(ref eq 'HASH' and exists $_->{_id}) {
+            my $id = $_->{_id};
+            $backend_data->{$id}               ||= { _id => $id };
+            $backend_data->{$id}{_rev}         ||= $_->{_rev};
+            $backend_data->{$id}{_attachments} ||= $_->{_attachments};
+        }
+        return $_;
+    } $response;
+    # End hack
+    
     my($result) = dmap {
         if(ref eq 'HASH') {
             if($_->{key} and $_->{value} and blessed $_->{value}) {
                 if($_->{value}->isa('KiokuDB::Entry')) {
                     my $entry = $_->{value};
+                    # Patch backend data for later use
+                    $entry->backend_data($backend_data->{$entry->id}) if $backend_data->{$entry->id};
                     my $object;
                     if(not $object = $self->live_objects->id_to_object($entry->id)) {
                         $object = $self->linker->expand_object($entry);
@@ -40,7 +58,7 @@ sub view {
             cut $_;
         }
         $_
-    } $self->backend->deserialize($self->backend->db->view($name, $options)->recv);
+    } $self->backend->deserialize($response);
     
     $self->linker->load_queue;
 

@@ -1,3 +1,8 @@
+0.07
+   - The view() method now respects object metadata, avoiding update
+     conflicts and lost attachments(!) if updating objects returned by
+     this method.
+
 0.06
    - Supporting non-standard method: view() that will query CouchDB and return
      a data structure containing live objects wherever KiokuDB entries are

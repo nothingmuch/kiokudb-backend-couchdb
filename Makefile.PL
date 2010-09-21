@@ -18,7 +18,7 @@ WriteMakefile(
         'KiokuDB' => 0.24,
         'AnyEvent::CouchDB' => 1.07,
         'Data::Stream::Bulk' => 0,
-        'Data::Dmap' => 0.04,
+        'Data::Dmap' => 0.08,
         'Scope::Guard' => 0,
     },
 );
