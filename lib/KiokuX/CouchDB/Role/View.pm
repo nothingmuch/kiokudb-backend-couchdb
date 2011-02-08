@@ -42,7 +42,7 @@ sub view {
                     if(not $object = $self->live_objects->id_to_object($entry->id)) {
                         $object = $self->linker->expand_object($entry);
                     }
-                    $_ = $object;
+                    cut $object;
                 }
             }
         } elsif(blessed $_ and $_->isa('KiokuDB::Reference')) {
@@ -52,7 +52,7 @@ sub view {
                 $_ = ['Unlinked KiokuDB::Reference'];
                 $self->linker->queue_ref($ref_obj, \$_);
             } else {
-                $_ = $object;
+                cut $object;
             }
         } elsif(blessed $_) {
             cut $_;

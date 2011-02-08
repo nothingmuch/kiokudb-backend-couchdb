@@ -11,7 +11,7 @@ use AnyEvent::CouchDB;
 use JSON;
 use Carp 'confess';
 use Try::Tiny;
-use List::MoreUtils 'all';
+use List::MoreUtils qw{ any all };
 use Data::Visitor::Callback;
 
 use namespace::clean -except => 'meta';
@@ -72,11 +72,35 @@ has '+class_field' => ( default => "class" );
 has '+class_meta_field' => ( default => "class_meta" );
 has '+deleted_field' => ( default => "_deleted" );
 
+our @couch_meta_fields = qw{ _rev _attachments _conflicts };
+
 #has _prefetch => (
 #    isa => "HashRef",
 #    is  => "ro",
 #    default => sub { +{} },
 #);
+
+sub delete {
+    my ( $self, @ids_or_entries ) = @_;
+    
+    my $db = $self->db;
+    
+    warn "Remove: ", join(', ', @ids_or_entries);
+    
+    for(@ids_or_entries) {
+        if(blessed($_)) {
+            my $meta = $self->find_meta($_);
+            $db->remove_doc({
+                _id  => $_->id,
+                ($meta->{_rev} ? (_rev => $meta->{_rev}) : ())
+            });
+        } else {
+            $db->remove_doc({_id => $_});
+        }
+    }
+    
+    return;
+}
 
 sub new_from_dsn_params {
     my ( $self, %args ) = @_;
@@ -88,6 +112,27 @@ sub new_from_dsn_params {
     $self->new(%args, db => $db);
 }
 
+# Collect metadata for a given entry
+sub find_meta {
+    my ( $self, $entry ) = @_;
+    my $meta;
+
+    my $prev = $entry;
+    # Go backwards in history to collect metadata
+    # TODO Consider whether this should be necessary - why not store this in every entry?
+    while($prev and any {not exists $meta->{$_}} @couch_meta_fields) {
+        if(my $backend_data = $prev->backend_data) {
+            for(@couch_meta_fields) {
+                $meta->{$_} = $backend_data->{$_}
+                    if $backend_data->{$_} and not exists $meta->{$_};
+            }
+        }
+        $prev = $prev->prev;
+    }
+    
+    return $meta;
+}
+
 sub commit_entries {
     my ( $self, @entries ) = @_;
     
@@ -96,23 +141,14 @@ sub commit_entries {
 
     foreach my $entry ( @entries ) {
         
-        my $rev;
-        my $attachments;
-        {
-            my $prev = $entry;
-            while(not $rev and not $attachments and $prev) {
-                if(my $backend_data = $prev->backend_data) {
-                    $rev         = $backend_data->{_rev};
-                    $attachments = $backend_data->{_attachments};
-                }
-                $prev = $prev->prev;
-            }
-        }
+        my $meta = $self->find_meta($entry);
         
         my $collapsed = $self->collapse_jspon($entry); 
 
-        $collapsed->{_rev} = $rev if $rev;
-        $collapsed->{_attachments} = $attachments if $attachments;
+        for(@couch_meta_fields) {
+            $collapsed->{$_} = $meta->{$_}
+                if $meta->{$_}
+        }
         
         push @docs, $collapsed;
 
@@ -127,7 +163,7 @@ sub commit_entries {
 
         if($self->conflicts eq 'confess') {
             no warnings 'uninitialized';
-            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id} ($_->{rev}))" } @errors);
+            confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id} ($_->{rev}, $_->{error}, $_->{reason}))" } @errors);
         } elsif($self->conflicts eq 'overwrite') {
             my @conflicts;
             my @other_errors;
