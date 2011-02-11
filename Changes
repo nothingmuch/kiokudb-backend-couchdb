@@ -1,3 +1,9 @@
+0.10
+  - Version bump (no changes to functionality).
+
+0.09
+  - Version bump (no changes to functionality).
+
 0.08
   - Optimized view() method by avoiding to recurse into newly deserialized
     objects.

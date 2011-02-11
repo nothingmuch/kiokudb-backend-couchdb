@@ -16,7 +16,7 @@ use Data::Visitor::Callback;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = '0.07';
+our $VERSION = '0.10';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
