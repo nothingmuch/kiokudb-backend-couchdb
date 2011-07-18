@@ -17,7 +17,7 @@ use Time::HiRes qw/gettimeofday tv_interval/;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
@@ -273,8 +273,6 @@ sub get_from_storage {
     # TODO What to do with entries not found?
     
     if ($ENV{KIOKU_COUCH_TRACE}){
-        use Data::Dump 'pp';
-        warn pp caller($_) for 0 .. 100;
         warn "[KIOKU COUCH TRACE] KiokuDB::Backend::CouchDB::get_from_storage():\n";
         warn "[KIOKU COUCH TRACE]   ".$_->{_id}.', ['.($_->{class} || '')."]\n" for @docs;
     }
