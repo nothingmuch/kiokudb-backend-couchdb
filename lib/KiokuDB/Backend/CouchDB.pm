@@ -273,7 +273,8 @@ sub get_from_storage {
     # TODO What to do with entries not found?
     
     if ($ENV{KIOKU_COUCH_TRACE}){
-        warn "[KIOKU COUCH TRACE] KiokuDB::Backend::CouchDB::get_from_storage():\n";
+        my $end = [ gettimeofday ];
+        warn "[KIOKU COUCH TRACE] KiokuDB::Backend::CouchDB::get_from_storage() [", tv_interval($start, $end),"s]:\n";
         warn "[KIOKU COUCH TRACE]   ".$_->{_id}.', ['.($_->{class} || '')."]\n" for @docs;
     }
     
