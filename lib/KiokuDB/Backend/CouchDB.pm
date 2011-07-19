@@ -276,6 +276,7 @@ sub get_from_storage {
         my $end = [ gettimeofday ];
         warn "[KIOKU COUCH TRACE] KiokuDB::Backend::CouchDB::get_from_storage() [", tv_interval($start, $end),"s]:\n";
         warn "[KIOKU COUCH TRACE]   ".$_->{_id}.', ['.($_->{class} || '')."]\n" for @docs;
+        warn "[KIOKU COUCH TRACE]   (not found) ".$_->{key}."\n" for @not_found;
     }
     
     return map { $self->deserialize($_) } @docs;
