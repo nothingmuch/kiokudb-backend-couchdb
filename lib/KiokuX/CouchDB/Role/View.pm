@@ -7,6 +7,8 @@ use Scalar::Util 'blessed';
 
 use namespace::clean -except => 'meta';
 
+# TODO Merge into KiokuDB::Backend::CouchDB and change to comply with KiokuDB::Backend::Role::Query
+
 # view() is a non-compliant method that can be called directly to query 
 # couchdb views and have all KiokuDB objects instantiated when needed
 # $name is a name of a CouchDB view that can contain complete KiokuDB

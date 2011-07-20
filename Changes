@@ -1,3 +1,8 @@
+0.12
+  - Added README (to make Github and others happy).
+  - Removed noisy debugging code that should never have been made generally
+    available.
+
 0.11
   - Enhanced debug output provided by Martin Parm.
   - Minor code cleanup.
