@@ -15,7 +15,7 @@ use KiokuDB::Backend::CouchDB::Exceptions;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = '0.13';
+our $VERSION = '0.15';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
