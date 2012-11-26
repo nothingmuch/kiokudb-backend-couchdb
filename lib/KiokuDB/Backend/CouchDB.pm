@@ -198,10 +198,6 @@ sub commit_entries {
                 }
             } else { # throw
                 my $conflicts = [];
-                my $exception = KiokuDB::Backend::CouchDB::Exception::Conflicts->new(
-                    conflicts => $conflicts,
-                    callback  => sub { $self->commit_entries(@_) }
-                );
                 my %docs;
                 for(@docs) {
                     $docs{$_->{_id}} = $_;
@@ -212,7 +208,10 @@ sub commit_entries {
                         old => $old_docs[$i]->{doc}{data}
                     };
                 }
-                $exception->throw;
+                KiokuDB::Backend::CouchDB::Exception::Conflicts->throw(
+                    conflicts => $conflicts,
+                    error     => 'Conflict while storing objects'
+                );
             }
         }
         # $self->conflicts eq 'ignore' here, so don't do anything
