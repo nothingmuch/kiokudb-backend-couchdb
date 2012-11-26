@@ -2,22 +2,20 @@
 
 package KiokuDB::Backend::CouchDB;
 use Moose;
-
 use Moose::Util::TypeConstraints;
-
 use Data::Stream::Bulk::Util qw(bulk);
 
 use AnyEvent::CouchDB;
-use JSON;
 use Carp 'confess';
 use Try::Tiny;
-use List::MoreUtils qw{ any all };
-use Data::Visitor::Callback;
+use List::MoreUtils qw{ any };
 use Time::HiRes qw/gettimeofday tv_interval/;
+
+use KiokuDB::Backend::CouchDB::Exceptions;
 
 use namespace::clean -except => 'meta';
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 # TODO Read revision numbers into rev field and use for later conflict resolution
 
@@ -42,8 +40,8 @@ has create => (
 
 has conflicts => (
     is      => 'rw',
-    isa     => enum([qw{ overwrite confess ignore }]),
-    default => 'confess'
+    isa     => enum([qw{ overwrite confess ignore throw }]),
+    default => 'throw'
 );
     
 
@@ -164,7 +162,8 @@ sub commit_entries {
         if($self->conflicts eq 'confess') {
             no warnings 'uninitialized';
             confess "Errors in update: " . join(", ", map { "$_->{error} (on ID $_->{id} ($_->{rev}, $_->{error}, $_->{reason}))" } @errors);
-        } elsif($self->conflicts eq 'overwrite') {
+        } elsif($self->conflicts eq 'overwrite' or $self->conflicts eq 'throw') {
+            my %conflicts;
             my @conflicts;
             my @other_errors;
             for(@errors) {
@@ -179,21 +178,41 @@ sub commit_entries {
             }
             
             # Updating resulted in conflicts that we handle by overwriting the change
-            my $old_docs = $db->open_docs([@conflicts])->recv;
+            my $old_docs = $db->open_docs([@conflicts], {conflicts => 'true'})->recv;
             if(exists $old_docs->{error}) {
                 confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: $old_docs->{error}.";
             }
             my @old_docs = @{$old_docs->{rows}};
-            my @re_update_docs;
-            foreach my $old_doc (@old_docs) {
-                my($new_doc) = grep {$old_doc->{doc}{_id} eq $_->{_id}} @docs;
-                $new_doc->{_rev} = $old_doc->{doc}{_rev};
-                push @re_update_docs, $new_doc;
-            }
-            # Handle errors that has arised when trying the second update
-            if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
-                confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
-                    join(', ', map { $_->{error} . ' on ' . $_->{id} } @errors);
+
+            if($self->conflicts eq 'overwrite') {
+                my @re_update_docs;
+                foreach my $old_doc (@old_docs) {
+                    my($new_doc) = grep {$old_doc->{doc}{_id} eq $_->{_id}} @docs;
+                    $new_doc->{_rev} = $old_doc->{doc}{_rev};
+                    push @re_update_docs, $new_doc;
+                }
+                # Handle errors that has arised when trying the second update
+                if(@errors = grep { exists $_->{error} } @{$self->db->bulk_docs(\@re_update_docs)->recv}) {
+                    confess "Updating ids ", join(', ', @conflicts), " failed during conflict resolution: ",
+                        join(', ', map { $_->{error} . ' on ' . $_->{id} } @errors);
+                }
+            } else { # throw
+                my $conflicts = [];
+                my $exception = KiokuDB::Backend::CouchDB::Exception::Conflicts->new(
+                    conflicts => $conflicts,
+                    callback  => sub { $self->commit_entries(@_) }
+                );
+                my %docs;
+                for(@docs) {
+                    $docs{$_->{_id}} = $_;
+                }
+                for(my $i=0; $i < @conflicts; $i++) {
+                    push @$conflicts, {
+                        new => $docs{$conflicts[$i]}->{data},
+                        old => $old_docs[$i]->{doc}{data}
+                    };
+                }
+                $exception->throw;
             }
         }
         # $self->conflicts eq 'ignore' here, so don't do anything
